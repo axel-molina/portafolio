@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { usePortfolioStore } from '@/store/portfolioStore';
 import { AVAILABLE_ASSETS, AvailableAsset, AssetType } from '@/lib/types';
+import { USD_TO_ARS_RATE } from '@/hooks/useAssetPrices';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Search, X, Check, DollarSign, Hash, Calendar, Receipt, ArrowLeft } from 'lucide-react';
@@ -21,6 +22,7 @@ export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [pricePerShare, setPricePerShare] = useState('');
+  const [priceCurrency, setPriceCurrency] = useState<'USD' | 'ARS'>('USD');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [fees, setFees] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -75,6 +77,11 @@ export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
     e.preventDefault();
     if (!validate() || !selectedAsset) return;
 
+    // Convert ARS to USD if selected
+    const priceInUSD = priceCurrency === 'ARS' 
+      ? parseFloat(pricePerShare) / USD_TO_ARS_RATE 
+      : parseFloat(pricePerShare);
+
     setIsSubmitting(true);
     addPurchase(
       portfolioId,
@@ -82,7 +89,7 @@ export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
       selectedAsset.name,
       selectedAsset.type,
       parseFloat(quantity),
-      parseFloat(pricePerShare),
+      priceInUSD,
       new Date(date).toISOString(),
       fees ? parseFloat(fees) : undefined
     );
@@ -323,22 +330,38 @@ export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
 
             <div>
               <label style={labelStyle}>{t('assets.pricePerShare')}</label>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }}>
-                  <DollarSign style={{ width: '16px', height: '16px' }} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }}>
+                    <DollarSign style={{ width: '16px', height: '16px' }} />
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    value={pricePerShare}
+                    onChange={(e) => { setPricePerShare(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
+                    placeholder="0.00"
+                    style={{
+                      ...inputStyle,
+                      paddingLeft: '42px',
+                      borderColor: errors.price ? 'var(--color-danger)' : 'var(--color-border)',
+                    }}
+                  />
                 </div>
-                <input
-                  type="number"
-                  step="any"
-                  value={pricePerShare}
-                  onChange={(e) => { setPricePerShare(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
-                  placeholder="0.00"
+                <select
+                  value={priceCurrency}
+                  onChange={(e) => setPriceCurrency(e.target.value as 'USD' | 'ARS')}
                   style={{
                     ...inputStyle,
-                    paddingLeft: '42px',
-                    borderColor: errors.price ? 'var(--color-danger)' : 'var(--color-border)',
+                    width: '90px',
+                    paddingLeft: '8px',
+                    backgroundColor: 'var(--color-background)',
+                    cursor: 'pointer',
                   }}
-                />
+                >
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
+                </select>
               </div>
               {errors.price && <p style={errorStyle}>{errors.price}</p>}
             </div>
