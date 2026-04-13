@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { usePortfolioStore } from '@/store/portfolioStore';
 import { useAssetPrices, formatCurrency, formatPercent } from '@/hooks/useAssetPrices';
 import { AssetType } from '@/lib/types';
@@ -41,6 +42,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
   const { t } = useTranslation();
   const assets = usePortfolioStore((state) => state.activeAssets);
   const totalInvested = assets.reduce((sum, a) => sum + a.totalInvested, 0);
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'ARS'>('USD');
 
   const typeLabels = {
     stock: t('dashboard.stocks'),
@@ -51,7 +53,14 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
   const tickers = assets.map(a => a.ticker);
   const { prices, loading, exchangeRate } = useAssetPrices(tickers);
 
-  // Only calculate current value when prices are loaded
+  // Helper to convert price based on display currency
+  const getDisplayPrice = (priceUSD: number) => {
+    const rate = exchangeRate || 1200;
+    return displayCurrency === 'ARS' ? priceUSD * rate : priceUSD;
+  };
+
+  // Calculate all values in display currency
+  const totalInvestedDisplay = getDisplayPrice(totalInvested);
   let totalCurrentValue = 0;
   let hasPrices = false;
   if (!loading && Object.keys(prices).length > 0) {
@@ -59,22 +68,22 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
     assets.forEach(asset => {
       const priceData = prices[asset.ticker];
       if (priceData) {
-        totalCurrentValue += asset.totalQuantity * priceData.currentPrice;
+        totalCurrentValue += asset.totalQuantity * getDisplayPrice(priceData.currentPrice);
       }
     });
   }
 
   // Only show profit/loss when we have prices
   const showProfitLoss = hasPrices && totalCurrentValue > 0;
-  const totalProfitLoss = showProfitLoss ? totalCurrentValue - totalInvested : 0;
-  const profitLossPercent = totalInvested > 0 && showProfitLoss ? (totalProfitLoss / totalInvested) * 100 : 0;
+  const totalProfitLoss = showProfitLoss ? totalCurrentValue - totalInvestedDisplay : 0;
+  const profitLossPercent = totalInvestedDisplay > 0 && showProfitLoss ? (totalProfitLoss / totalInvestedDisplay) * 100 : 0;
 
   const allocationByType = assets.reduce(
     (acc, asset) => {
-      const value = prices[asset.ticker]?.currentPrice
+      const valueUSD = prices[asset.ticker]?.currentPrice
         ? asset.totalQuantity * prices[asset.ticker].currentPrice
         : asset.totalInvested;
-      acc[asset.type] = (acc[asset.type] || 0) + value;
+      acc[asset.type] = (acc[asset.type] || 0) + getDisplayPrice(valueUSD);
       return acc;
     },
     {} as Record<string, number>
@@ -113,6 +122,50 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Currency Selector */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{
+          display: 'flex',
+          background: 'var(--color-background-hover)',
+          borderRadius: '8px',
+          padding: '4px',
+          border: '1px solid var(--color-border)',
+        }}>
+          <button
+            onClick={() => setDisplayCurrency('USD')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: displayCurrency === 'USD' ? 'var(--color-primary)' : 'transparent',
+              color: displayCurrency === 'USD' ? '#fff' : 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            USD
+          </button>
+          <button
+            onClick={() => setDisplayCurrency('ARS')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: displayCurrency === 'ARS' ? 'var(--color-primary)' : 'transparent',
+              color: displayCurrency === 'ARS' ? '#fff' : 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            ARS
+          </button>
+        </div>
+      </div>
+
       {/* Summary Cards */}
       <motion.div
         variants={container}
@@ -123,7 +176,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
         <motion.div variants={item}>
           <SummaryCard
             title={t('assets.totalInvested')}
-            value={hasPrices ? formatCurrency(totalInvested, 'ARS', exchangeRate) : totalInvested > 0 ? formatCurrency(totalInvested, 'ARS', exchangeRate) : '—'}
+            value={hasPrices ? formatCurrency(totalInvestedDisplay, displayCurrency, exchangeRate) : totalInvested > 0 ? formatCurrency(totalInvestedDisplay, displayCurrency, exchangeRate) : '—'}
             icon={<Wallet style={{ width: '20px', height: '20px' }} />}
             iconBg="rgba(99, 102, 241, 0.12)"
             iconColor="var(--color-primary-light)"
@@ -133,7 +186,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
         <motion.div variants={item}>
           <SummaryCard
             title={t('assets.currentValue')}
-            value={loading ? '—' : hasPrices ? formatCurrency(totalCurrentValue, 'ARS', exchangeRate) : '—'}
+            value={loading ? '—' : hasPrices ? formatCurrency(totalCurrentValue, displayCurrency, exchangeRate) : '—'}
             icon={<PieChartIcon style={{ width: '20px', height: '20px' }} />}
             iconBg="rgba(16, 185, 129, 0.12)"
             iconColor="var(--color-success)"
@@ -143,7 +196,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
         <motion.div variants={item}>
           <SummaryCard
             title={t('assets.profitLoss')}
-            value={showProfitLoss ? formatCurrency(totalProfitLoss, 'ARS', exchangeRate) : '—'}
+            value={showProfitLoss ? formatCurrency(totalProfitLoss, displayCurrency, exchangeRate) : '—'}
             change={showProfitLoss ? formatPercent(profitLossPercent) : undefined}
             icon={totalProfitLoss >= 0 ? <TrendingUp style={{ width: '20px', height: '20px' }} /> : <TrendingDown style={{ width: '20px', height: '20px' }} />}
             iconBg={totalProfitLoss >= 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)'}
@@ -189,7 +242,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: unknown) => formatCurrency(value as number, 'ARS', exchangeRate)}
+                    formatter={(value: unknown) => formatCurrency(value as number, displayCurrency, exchangeRate)}
                     contentStyle={{
                       backgroundColor: 'var(--color-background-card)',
                       border: '1px solid var(--color-border)',
@@ -236,7 +289,7 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
                   />
                   <Tooltip
                     formatter={(value: unknown, name: unknown) => [
-                      name === 'value' ? formatCurrency(value as number, 'ARS', exchangeRate) : formatPercent(value as number),
+                      name === 'value' ? formatCurrency(value as number, displayCurrency, exchangeRate) : formatPercent(value as number),
                       name === 'value' ? 'Value' : 'Change'
                     ]}
                     contentStyle={{
@@ -378,11 +431,11 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
                         {asset.totalQuantity.toFixed(asset.totalQuantity < 1 ? 6 : 2)}
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: '14px', color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>
-                        {formatCurrency(asset.averagePrice, 'ARS', exchangeRate)}
+                        {formatCurrency(asset.averagePrice, displayCurrency, exchangeRate)}
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                         <p style={{ fontSize: '14px', color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>
-                          {hasPriceData ? formatCurrency(currentPrice, 'ARS', exchangeRate) : formatCurrency(asset.averagePrice, 'ARS', exchangeRate)}
+                          {hasPriceData ? formatCurrency(currentPrice, displayCurrency, exchangeRate) : formatCurrency(asset.averagePrice, displayCurrency, exchangeRate)}
                         </p>
                         {priceData && (
                           <p style={{ fontSize: '11px', marginTop: '2px', color: priceData.changePercent >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 500 }}>
@@ -391,11 +444,11 @@ export function PortfolioDashboard({ onSelectAsset }: PortfolioDashboardProps) {
                         )}
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>
-                        {hasPriceData ? formatCurrency(currentValue, 'ARS', exchangeRate) : '—'}
+                        {hasPriceData ? formatCurrency(currentValue, displayCurrency, exchangeRate) : '—'}
                       </td>
                       <td style={{ padding: '16px 24px', textAlign: 'right' }}>
                         <p style={{ fontSize: '14px', fontWeight: 600, color: hasPriceData && profitLoss >= 0 ? 'var(--color-success)' : hasPriceData ? 'var(--color-danger)' : 'var(--color-text-muted)', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}>
-                          {hasPriceData ? formatCurrency(profitLoss, 'ARS', exchangeRate) : '—'}
+                          {hasPriceData ? formatCurrency(profitLoss, displayCurrency, exchangeRate) : '—'}
                         </p>
                         {hasPriceData && (
                           <p style={{ fontSize: '11px', marginTop: '2px', color: profitLossPercent >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 500 }}>
