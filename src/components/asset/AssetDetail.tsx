@@ -1,7 +1,7 @@
 'use client';
 
 import { usePortfolioStore } from '@/store/portfolioStore';
-import { useAssetPrices, formatCurrency, formatPercent, formatDate, USD_TO_ARS_RATE } from '@/hooks/useAssetPrices';
+import { useAssetPrices, formatCurrency, formatPercent, formatDate } from '@/hooks/useAssetPrices';
 import { AssetType } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -44,7 +44,7 @@ export function AssetDetail({ ticker, onBack }: AssetDetailProps) {
   const activeAssets = usePortfolioStore((state) => state.activeAssets);
   const removeAsset = usePortfolioStore((state) => state.removeAsset);
   const asset = activeAssets.find((a) => a.ticker === ticker);
-  const { prices } = useAssetPrices([ticker]);
+  const { prices, exchangeRate } = useAssetPrices([ticker]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!asset) {
@@ -233,14 +233,14 @@ export function AssetDetail({ ticker, onBack }: AssetDetailProps) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
           <StatCard
             label="Current Price"
-            value={formatCurrency(currentPrice, 'ARS')}
+            value={formatCurrency(currentPrice, 'ARS', exchangeRate)}
             change={priceData ? formatPercent(priceData.changePercent) : undefined}
             positive={priceData ? priceData.changePercent >= 0 : true}
             icon={<DollarSign style={{ width: '18px', height: '18px' }} />}
           />
           <StatCard
             label="Average Buy Price"
-            value={formatCurrency(asset.averagePrice, 'ARS')}
+            value={formatCurrency(asset.averagePrice, 'ARS', exchangeRate)}
             icon={<TrendingUp style={{ width: '18px', height: '18px' }} />}
           />
           <StatCard
@@ -250,7 +250,7 @@ export function AssetDetail({ ticker, onBack }: AssetDetailProps) {
           />
           <StatCard
             label="Total P&L"
-            value={`${totalProfitLoss >= 0 ? '+' : ''}${formatCurrency(totalProfitLoss, 'ARS')}`}
+            value={`${totalProfitLoss >= 0 ? '+' : ''}${formatCurrency(totalProfitLoss, 'ARS', exchangeRate)}`}
             change={formatPercent(profitLossPercent)}
             positive={totalProfitLoss >= 0}
             icon={totalProfitLoss >= 0 ? <TrendingUp style={{ width: '18px', height: '18px' }} /> : <TrendingDown style={{ width: '18px', height: '18px' }} />}
@@ -286,9 +286,9 @@ export function AssetDetail({ ticker, onBack }: AssetDetailProps) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.5} />
             <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
-            <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} tickFormatter={(v: number) => `$${(v * USD_TO_ARS_RATE).toFixed(0)}`} />
+            <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} tickFormatter={(v: number) => `$${(v * exchangeRate).toFixed(0)}`} />
             <Tooltip
-              formatter={(value: unknown) => [formatCurrency(value as number, 'ARS'), 'Price']}
+              formatter={(value: unknown) => [formatCurrency(value as number, 'ARS', exchangeRate), 'Price']}
               labelStyle={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}
               contentStyle={{
                 backgroundColor: 'var(--color-background-card)',
@@ -376,14 +376,14 @@ export function AssetDetail({ ticker, onBack }: AssetDetailProps) {
 
                   <div style={{ textAlign: 'right' }}>
                     <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatCurrency(purchase.pricePerShare, 'ARS')}
+                      {formatCurrency(purchase.pricePerShare, 'ARS', exchangeRate)}
                     </p>
                     <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
-                      Total: {formatCurrency(purchase.quantity * purchase.pricePerShare, 'ARS')}
+                      Total: {formatCurrency(purchase.quantity * purchase.pricePerShare, 'ARS', exchangeRate)}
                     </p>
                     {purchase.fees && purchase.fees > 0 && (
                       <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-                        +{formatCurrency(purchase.fees, 'ARS')} fees
+                        +{formatCurrency(purchase.fees, 'ARS', exchangeRate)} fees
                       </p>
                     )}
                   </div>

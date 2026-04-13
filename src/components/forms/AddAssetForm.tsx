@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { usePortfolioStore } from '@/store/portfolioStore';
 import { AVAILABLE_ASSETS, AvailableAsset, AssetType } from '@/lib/types';
-import { USD_TO_ARS_RATE } from '@/hooks/useAssetPrices';
+import { USD_TO_ARS_RATE } from '@/hooks/useExchangeRate';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Search, X, Check, DollarSign, Hash, Calendar, Receipt, ArrowLeft } from 'lucide-react';

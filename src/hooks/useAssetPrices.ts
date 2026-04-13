@@ -1,16 +1,41 @@
 import { AssetPrice } from '@/lib/types';
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useEffect as useEffect2 } from 'react';
 
-// Exchange rate USD to ARS (actual rate varies daily)
-export const USD_TO_ARS_RATE = 1200;
+// Default exchange rate (fallback)
+let DEFAULT_USD_TO_ARS = 1200;
+
+// Fetch exchange rate on app load
+if (typeof window !== 'undefined') {
+  fetch('/api/exchange-rate')
+    .then(res => res.json())
+    .then(data => {
+      if (data.usdToArs) {
+        DEFAULT_USD_TO_ARS = data.usdToArs;
+      }
+    })
+    .catch(console.error);
+}
 
 export function useAssetPrices(tickers: string[], autoRefresh = false) {
   const [prices, setPrices] = useState<Record<string, AssetPrice>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{ requestsUsed?: number; requestsLeft?: number } | null>(null);
+  const [exchangeRate, setExchangeRate] = useState<number>(DEFAULT_USD_TO_ARS);
   const isInitialFetch = useRef(true);
   const isFetching = useRef(false);
+
+  // Fetch exchange rate
+  useEffect(() => {
+    fetch('/api/exchange-rate')
+      .then(res => res.json())
+      .then(data => {
+        if (data.usdToArs) {
+          setExchangeRate(data.usdToArs);
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // Memoize tickers string to prevent unnecessary re-renders
   const tickersKey = useMemo(() => tickers.join(','), [tickers]);
@@ -33,8 +58,8 @@ export function useAssetPrices(tickers: string[], autoRefresh = false) {
         isInitialFetch.current = false;
       }
 
-      const url = force 
-        ? `/api/prices?tickers=${tickersStr}&force=true` 
+      const url = force
+        ? `/api/prices?tickers=${tickersStr}&force=true`
         : `/api/prices?tickers=${tickersStr}`;
       const response = await fetch(url);
 
@@ -73,18 +98,18 @@ export function useAssetPrices(tickers: string[], autoRefresh = false) {
   }, []);
 
   // Fetch on mount (only), no auto-refresh to save API calls
-  useEffect(() => {
+  useEffect2(() => {
     isInitialFetch.current = true;
     fetchPrices(tickersKey);
   }, [fetchPrices, tickersKey]);
 
-  return { prices, loading, error, meta, refetch: (force = false) => fetchPrices(tickersKey, force) };
+  return { prices, loading, error, meta, exchangeRate, refetch: (force = false) => fetchPrices(tickersKey, force) };
 }
 
-export function formatCurrency(value: number, currency: string = 'USD'): string {
-  // For ARS, convert from USD
-  const displayValue = currency === 'ARS' ? value * USD_TO_ARS_RATE : value;
-  
+export function formatCurrency(value: number, currency: string = 'USD', exchangeRate = DEFAULT_USD_TO_ARS): string {
+  // For ARS, convert from USD using dynamic exchange rate
+  const displayValue = currency === 'ARS' ? value * exchangeRate : value;
+
   return new Intl.NumberFormat(currency === 'ARS' ? 'es-AR' : 'en-US', {
     style: 'currency',
     currency,
