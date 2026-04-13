@@ -147,12 +147,17 @@ export async function createOrUpdateAsset(
 }
 
 export async function deleteAssetFromPortfolio(assetId: string): Promise<void> {
+  console.log('[InsForge] Deleting asset:', assetId);
   const { error } = await insforge.database
     .from('portfolio_assets')
     .delete()
     .eq('id', assetId);
 
-  if (error) throw error;
+  if (error) {
+    console.log('[InsForge] Error deleting asset:', error);
+    throw error;
+  }
+  console.log('[InsForge] Asset deleted successfully');
 }
 
 // ─── Purchases ───────────────────────────────────────────

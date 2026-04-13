@@ -178,9 +178,11 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
 
   removeAsset: async (assetId, portfolioId) => {
     try {
+      console.log('[PortfolioStore] Removing asset:', assetId, portfolioId);
       await deleteAssetFromPortfolio(assetId);
       await get().loadAssetsForPortfolio(portfolioId);
     } catch (err) {
+      console.log('[PortfolioStore] Error removing asset:', err);
       set({ error: (err as Error).message });
       throw err;
     }

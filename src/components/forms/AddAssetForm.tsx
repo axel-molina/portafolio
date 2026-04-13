@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { usePortfolioStore } from '@/store/portfolioStore';
 import { AVAILABLE_ASSETS, AvailableAsset, AssetType } from '@/lib/types';
-import { USD_TO_ARS_RATE } from '@/hooks/useExchangeRate';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Search, X, Check, DollarSign, Hash, Calendar, Receipt, ArrowLeft } from 'lucide-react';
@@ -16,7 +16,8 @@ interface AddAssetFormProps {
 export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
   const { t } = useTranslation();
   const addPurchase = usePortfolioStore((state) => state.addPurchase);
-  
+  const { rate: exchangeRate } = useExchangeRate();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAsset, setSelectedAsset] = useState<AvailableAsset | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -77,9 +78,10 @@ export function AddAssetForm({ onSuccess, portfolioId }: AddAssetFormProps) {
     e.preventDefault();
     if (!validate() || !selectedAsset) return;
 
-    // Convert ARS to USD if selected
+    // Convert ARS to USD using current exchange rate
+    const exchangeRateToUse = exchangeRate || 1200;
     const priceInUSD = priceCurrency === 'ARS' 
-      ? parseFloat(pricePerShare) / USD_TO_ARS_RATE 
+      ? parseFloat(pricePerShare) / exchangeRateToUse
       : parseFloat(pricePerShare);
 
     setIsSubmitting(true);
