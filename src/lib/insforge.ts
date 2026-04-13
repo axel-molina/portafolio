@@ -99,6 +99,7 @@ export async function createOrUpdateAsset(
     .eq('ticker', ticker)
     .single();
 
+  console.log('[InsForge] createOrUpdateAsset:', { ticker, existing: !!existing });
   const totalInvested = (quantity * pricePerShare) + fees;
 
   if (existing) {
@@ -121,6 +122,7 @@ export async function createOrUpdateAsset(
       .select()
       .single();
 
+    console.log('[InsForge] Updated asset:', dbAsset.id);
     if (error) throw error;
     return data as DbPortfolioAsset;
   } else {
@@ -181,6 +183,7 @@ export async function createPurchase(
   date: string,
   fees: number
 ): Promise<DbPurchase> {
+  console.log('[InsForge] createPurchase:', { ticker, assetId, quantity, pricePerShare, date });
   const { data, error } = await insforge.database
     .from('purchases')
     .insert([{
@@ -195,6 +198,7 @@ export async function createPurchase(
     .select()
     .single();
 
+  console.log('[InsForge] Purchase created:', { id: data?.id, error });
   if (error) throw error;
   return data as DbPurchase;
 }
