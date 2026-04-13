@@ -3,6 +3,34 @@ import { NextRequest, NextResponse } from 'next/server';
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const BASE_URL = 'https://www.alphavantage.co/query';
 
+// In-memory cache (resets on server restart)
+interface CacheEntry {
+  prices: Record<string, { currentPrice: number; change24h: number; changePercent: number; lastUpdated: string }>;
+  timestamp: number;
+}
+
+let priceCache: CacheEntry | null = null;
+let requestCount = 0;
+let lastRequestDate = new Date().toDateString();
+
+// Cache duration: 4 hours (allows ~3 API calls per day)
+const CACHE_DURATION = 4 * 60 * 60 * 1000;
+// Maximum requests per day
+const MAX_DAILY_REQUESTS = 3;
+
+function resetDailyLimit() {
+  const today = new Date().toDateString();
+  if (lastRequestDate !== today) {
+    requestCount = 0;
+    lastRequestDate = today;
+  }
+}
+
+function canMakeRequest(): boolean {
+  resetDailyLimit();
+  return requestCount < MAX_DAILY_REQUESTS;
+}
+
 // Mock fallback data
 const MOCK_STOCK_PRICES: Record<string, { price: number; change: number }> = {
   AAPL: { price: 178.72, change: 2.34 },
@@ -34,7 +62,6 @@ const MOCK_CEDEAR_PRICES: Record<string, { price: number; change: number }> = {
   PAMP: { price: 34.56, change: 1.78 },
 };
 
-// Determine if ticker is crypto
 function isCrypto(ticker: string): boolean {
   const upper = ticker.toUpperCase();
   if (upper.includes('BTC') || upper.includes('ETH') || upper.includes('USD')) return true;
@@ -42,10 +69,8 @@ function isCrypto(ticker: string): boolean {
   return cryptoList.some(c => upper.startsWith(c));
 }
 
-// Fetch from Alpha Vantage
 async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: number; change24h: number; changePercent: number } | null> {
   if (!ALPHA_VANTAGE_API_KEY) {
-    console.log('[AlphaVantage] No API key configured');
     return null;
   }
 
@@ -54,10 +79,8 @@ async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: nu
     let url: string;
 
     if (isCrypto(ticker)) {
-      // Crypto intraday endpoint
       url = `${BASE_URL}?function=CRYPTO_INTRADAY&symbol=${symbol}&market=USD&interval=5min&apikey=${ALPHA_VANTAGE_API_KEY}`;
     } else {
-      // Global quote endpoint for stocks
       url = `${BASE_URL}?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
     }
 
@@ -78,13 +101,12 @@ async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: nu
       const timeSeries = data['Time Series (CryptoIntraday)'];
       const times = Object.keys(timeSeries);
       if (times.length > 0) {
-        const latest = timeSeries[times[0]];
-        const price = parseFloat(latest['4. close']);
-        // Calculate change from previous close
-        const prevTimes = Object.keys(timeSeries);
-        const prev = prevTimes.length > 1 ? timeSeries[prevTimes[1]]['4. close'] : price;
-        const change = price - parseFloat(prev);
-        const changePercent = prev > 0 ? (change / parseFloat(prev)) * 100 : 0;
+        const latest = timeSeries[0];
+        const price = parseFloat(timeSeries[latest]['4. close']);
+        const prevTimes = times.slice(1);
+        const prev = prevTimes.length > 0 ? parseFloat(timeSeries[prevTimes[0]]['4. close']) : price;
+        const change = price - prev;
+        const changePercent = prev > 0 ? (change / prev) * 100 : 0;
 
         console.log(`[AlphaVantage] ${ticker}: $${price}`);
         return { currentPrice: price, change24h: change, changePercent };
@@ -123,30 +145,60 @@ function getMockPrice(ticker: string): { currentPrice: number; change24h: number
   return null;
 }
 
+// Check if cache is still valid
+function isCacheValid(tickers: string[]): boolean {
+  if (!priceCache) return false;
+  if (Date.now() - priceCache.timestamp > CACHE_DURATION) return false;
+
+  // Check if all requested tickers are in cache
+  return tickers.every(t => priceCache!.prices[t.toUpperCase()]);
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const tickers = searchParams.get('tickers');
+  const forceRefresh = searchParams.get('force') === 'true';
 
   if (!tickers) {
     return NextResponse.json({ error: 'Missing tickers parameter' }, { status: 400 });
   }
 
   const tickerList = tickers.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+
+  // Check if cache is valid (unless force refresh)
+  if (!forceRefresh && isCacheValid(tickerList)) {
+    console.log('[Price API] Using cached prices');
+    return NextResponse.json(priceCache!.prices);
+  }
+
+  // Check if we can make a new request
+  if (!forceRefresh && !canMakeRequest()) {
+    if (priceCache) {
+      console.log('[Price API] Daily limit reached, using cached prices');
+      return NextResponse.json(priceCache.prices);
+    }
+    return NextResponse.json({
+      error: 'Daily API limit reached. Try again tomorrow.',
+      limit: MAX_DAILY_REQUESTS,
+      used: requestCount
+    }, { status: 429 });
+  }
+
+  // Make API request
+  requestCount++;
+  console.log(`[Price API] Making API request (${requestCount}/${MAX_DAILY_REQUESTS})`);
+
   const prices: Record<string, { currentPrice: number; change24h: number; changePercent: number; lastUpdated: string }> = {};
 
-  // Fetch real prices from Alpha Vantage
-  console.log('[Price API] Fetching prices for:', tickerList.join(', '));
-  
   for (const ticker of tickerList) {
     const priceData = await fetchFromAlphaVantage(ticker);
-    
+
     if (priceData && priceData.currentPrice > 0) {
       prices[ticker] = {
         ...priceData,
         lastUpdated: new Date().toISOString(),
       };
     } else {
-      // Fallback to mock data
       const mockData = getMockPrice(ticker);
       if (mockData) {
         prices[ticker] = {
@@ -158,9 +210,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (Object.keys(prices).length === 0) {
-    return NextResponse.json({ error: 'No prices available for the requested tickers' }, { status: 404 });
-  }
+  // Update cache
+  priceCache = {
+    prices,
+    timestamp: Date.now(),
+  };
 
-  return NextResponse.json(prices);
+  const response: Record<string, any> = { ...prices };
+  response._meta = {
+    requestsUsed: requestCount,
+    requestsLeft: MAX_DAILY_REQUESTS - requestCount,
+    cached: false,
+  };
+
+  return NextResponse.json(response);
 }

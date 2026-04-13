@@ -2,20 +2,20 @@ import { AssetPrice } from '@/lib/types';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 // Exchange rate USD to ARS (actual rate varies daily)
-// You can fetch this from an API like: https://api.exchangerate-api.com/v4/latest/USD
 export const USD_TO_ARS_RATE = 1200;
 
-export function useAssetPrices(tickers: string[], refreshInterval = 30000) {
+export function useAssetPrices(tickers: string[], autoRefresh = false) {
   const [prices, setPrices] = useState<Record<string, AssetPrice>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{ requestsUsed?: number; requestsLeft?: number } | null>(null);
   const isInitialFetch = useRef(true);
   const isFetching = useRef(false);
 
   // Memoize tickers string to prevent unnecessary re-renders
   const tickersKey = useMemo(() => tickers.join(','), [tickers]);
 
-  const fetchPrices = useCallback(async (tickersStr: string) => {
+  const fetchPrices = useCallback(async (tickersStr: string, force = false) => {
     if (isFetching.current) return;
     isFetching.current = true;
 
@@ -33,13 +33,22 @@ export function useAssetPrices(tickers: string[], refreshInterval = 30000) {
         isInitialFetch.current = false;
       }
 
-      const response = await fetch(`/api/prices?tickers=${tickersStr}`);
+      const url = force 
+        ? `/api/prices?tickers=${tickersStr}&force=true` 
+        : `/api/prices?tickers=${tickersStr}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error('Failed to fetch prices');
       }
 
       const data = await response.json();
+
+      // Extract meta info if present
+      if (data._meta) {
+        setMeta(data._meta);
+        delete data._meta;
+      }
 
       const formattedPrices: Record<string, AssetPrice> = {};
       Object.entries(data).forEach(([ticker, priceData]: [string, any]) => {
@@ -63,15 +72,13 @@ export function useAssetPrices(tickers: string[], refreshInterval = 30000) {
     }
   }, []);
 
+  // Fetch on mount (only), no auto-refresh to save API calls
   useEffect(() => {
     isInitialFetch.current = true;
     fetchPrices(tickersKey);
+  }, [fetchPrices, tickersKey]);
 
-    const interval = setInterval(() => fetchPrices(tickersKey), refreshInterval);
-    return () => clearInterval(interval);
-  }, [fetchPrices, tickersKey, refreshInterval]);
-
-  return { prices, loading, error, refetch: fetchPrices };
+  return { prices, loading, error, meta, refetch: (force = false) => fetchPrices(tickersKey, force) };
 }
 
 export function formatCurrency(value: number, currency: string = 'USD'): string {
