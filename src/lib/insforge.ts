@@ -159,6 +159,7 @@ export async function getAssetPurchases(
   portfolioId: string,
   assetId: string
 ): Promise<DbPurchase[]> {
+  console.log('[InsForge] getAssetPurchases:', { portfolioId, assetId });
   const { data, error } = await insforge.database
     .from('purchases')
     .select('*')
@@ -166,6 +167,7 @@ export async function getAssetPurchases(
     .eq('asset_id', assetId)
     .order('date', { ascending: false });
 
+  console.log('[InsForge] Purchases result:', { count: data?.length, error });
   if (error) throw error;
   return (data || []) as DbPurchase[];
 }

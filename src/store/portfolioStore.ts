@@ -228,11 +228,13 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
   loadAssetsForPortfolio: async (portfolioId: string) => {
     try {
       const dbAssets = await getPortfolioAssets(portfolioId);
+      console.log('[PortfolioStore] Loading assets for portfolio:', portfolioId, 'Count:', dbAssets.length);
 
       // Load purchases for each asset
       const assets: Asset[] = [];
       for (const dbAsset of dbAssets) {
         const purchases = await getAssetPurchases(portfolioId, dbAsset.id);
+        console.log('[PortfolioStore] Asset:', dbAsset.ticker, 'Purchases:', purchases.length, 'assetId:', dbAsset.id);
         const mappedPurchases: Purchase[] = purchases.map((p) => ({
           id: p.id,
           portfolioId: p.portfolio_id,
@@ -248,6 +250,7 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
       }
 
       set({ activeAssets: assets });
+      console.log('[PortfolioStore] Total assets:', assets.length, 'Total purchases:', assets.reduce((sum, a) => sum + a.purchases.length, 0));
     } catch (err) {
       set({ error: (err as Error).message });
     }
