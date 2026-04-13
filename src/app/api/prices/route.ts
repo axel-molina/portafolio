@@ -38,9 +38,37 @@ function isCrypto(ticker: string): boolean {
   return cryptoList.some(c => upper.startsWith(c));
 }
 
+// Fallback to Yahoo Finance when Alpha Vantage rate limited
+async function fetchFromYahooFinance(ticker: string): Promise<{ currentPrice: number; change24h: number; changePercent: number } | null> {
+  try {
+    const symbol = ticker.replace('-USD', '').toUpperCase();
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    const result = data?.chart?.result?.[0];
+    if (result?.meta?.regularMarketPrice) {
+      const price = result.meta.regularMarketPrice;
+      const prevClose = result.meta.previousClose || result.meta.chartPreviousClose;
+      const change = prevClose ? price - prevClose : 0;
+      const changePercent = prevClose ? (change / prevClose) * 100 : 0;
+      
+      console.log(`[YahooFinance] ${ticker}: $${price}`);
+      return { currentPrice: price, change24h: change, changePercent };
+    }
+    
+    return null;
+  } catch (error) {
+    console.log(`[YahooFinance Error] ${ticker}: ${error instanceof Error ? error.message : 'Unknown'}`);
+    return null;
+  }
+}
+
 async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: number; change24h: number; changePercent: number } | null> {
   if (!ALPHA_VANTAGE_API_KEY) {
-    return null;
+    // Fallback to Yahoo Finance if no API key
+    return fetchFromYahooFinance(ticker);
   }
 
   try {
@@ -55,6 +83,12 @@ async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: nu
 
     const response = await fetch(url);
     const data = await response.json();
+
+    // Check for rate limit message
+    if (data['Note'] || data['Information']?.includes('rate limit')) {
+      console.log(`[AlphaVantage] ${ticker}: Rate limited, trying Yahoo Finance...`);
+      return fetchFromYahooFinance(ticker);
+    }
 
     if (data['Global Quote']) {
       const quote = data['Global Quote'];
@@ -82,11 +116,12 @@ async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: nu
       }
     }
 
-    console.log(`[AlphaVantage] ${ticker}: No data`);
-    return null;
+    // If Alpha Vantage returns no data, try Yahoo Finance
+    console.log(`[AlphaVantage] ${ticker}: No data, trying Yahoo Finance...`);
+    return fetchFromYahooFinance(ticker);
   } catch (error) {
     console.log(`[AlphaVantage Error] ${ticker}: ${error instanceof Error ? error.message : 'Unknown'}`);
-    return null;
+    return fetchFromYahooFinance(ticker);
   }
 }
 
