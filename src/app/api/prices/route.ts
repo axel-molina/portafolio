@@ -13,10 +13,10 @@ let priceCache: CacheEntry | null = null;
 let requestCount = 0;
 let lastRequestDate = new Date().toDateString();
 
-// Cache duration: 4 hours (allows ~3 API calls per day)
+// Cache duration: 4 hours
 const CACHE_DURATION = 4 * 60 * 60 * 1000;
 // Maximum requests per day
-const MAX_DAILY_REQUESTS = 3;
+const MAX_DAILY_REQUESTS = 25;
 
 function resetDailyLimit() {
   const today = new Date().toDateString();
@@ -30,37 +30,6 @@ function canMakeRequest(): boolean {
   resetDailyLimit();
   return requestCount < MAX_DAILY_REQUESTS;
 }
-
-// Mock fallback data
-const MOCK_STOCK_PRICES: Record<string, { price: number; change: number }> = {
-  AAPL: { price: 178.72, change: 2.34 },
-  GOOGL: { price: 141.80, change: -1.25 },
-  MSFT: { price: 417.88, change: 3.56 },
-  AMZN: { price: 186.49, change: 1.89 },
-  META: { price: 502.30, change: 5.67 },
-  NVDA: { price: 875.28, change: 12.45 },
-  TSLA: { price: 248.42, change: -4.32 },
-  JPM: { price: 198.50, change: 2.10 },
-  V: { price: 279.32, change: 0.98 },
-  SPY: { price: 502.50, change: 3.25 },
-  QQQ: { price: 438.90, change: 2.45 },
-};
-
-const MOCK_CRYPTO_PRICES: Record<string, { price: number; change: number }> = {
-  BTC: { price: 69420.00, change: 1234.56 },
-  ETH: { price: 3456.78, change: -89.12 },
-  SOL: { price: 145.67, change: 8.90 },
-  XRP: { price: 0.5678, change: -0.0234 },
-  DOGE: { price: 0.1234, change: 0.0089 },
-  AVAX: { price: 35.67, change: 2.34 },
-};
-
-const MOCK_CEDEAR_PRICES: Record<string, { price: number; change: number }> = {
-  CEPU: { price: 23.45, change: 0.89 },
-  GGAL: { price: 45.67, change: -1.23 },
-  YPFD: { price: 12.34, change: 0.56 },
-  PAMP: { price: 34.56, change: 1.78 },
-};
 
 function isCrypto(ticker: string): boolean {
   const upper = ticker.toUpperCase();
@@ -121,30 +90,6 @@ async function fetchFromAlphaVantage(ticker: string): Promise<{ currentPrice: nu
   }
 }
 
-function getMockPrice(ticker: string): { currentPrice: number; change24h: number; changePercent: number } | null {
-  const upper = ticker.toUpperCase().replace('-USD', '');
-  let mockData: { price: number; change: number } | undefined;
-
-  if (MOCK_STOCK_PRICES[upper]) {
-    mockData = MOCK_STOCK_PRICES[upper];
-  } else if (MOCK_CRYPTO_PRICES[upper]) {
-    mockData = MOCK_CRYPTO_PRICES[upper];
-  } else if (MOCK_CEDEAR_PRICES[upper]) {
-    mockData = MOCK_CEDEAR_PRICES[upper];
-  }
-
-  if (mockData) {
-    const changePercent = (mockData.change / (mockData.price - mockData.change)) * 100;
-    return {
-      currentPrice: mockData.price,
-      change24h: mockData.change,
-      changePercent: parseFloat(changePercent.toFixed(2)),
-    };
-  }
-
-  return null;
-}
-
 // Check if cache is still valid
 function isCacheValid(tickers: string[]): boolean {
   if (!priceCache) return false;
@@ -167,14 +112,12 @@ export async function GET(request: NextRequest) {
 
   // Check if cache is valid (unless force refresh)
   if (!forceRefresh && isCacheValid(tickerList)) {
-    console.log('[Price API] Using cached prices');
     return NextResponse.json(priceCache!.prices);
   }
 
   // Check if we can make a new request
   if (!forceRefresh && !canMakeRequest()) {
     if (priceCache) {
-      console.log('[Price API] Daily limit reached, using cached prices');
       return NextResponse.json(priceCache.prices);
     }
     return NextResponse.json({
@@ -186,7 +129,6 @@ export async function GET(request: NextRequest) {
 
   // Make API request
   requestCount++;
-  console.log(`[Price API] Making API request (${requestCount}/${MAX_DAILY_REQUESTS})`);
 
   const prices: Record<string, { currentPrice: number; change24h: number; changePercent: number; lastUpdated: string }> = {};
 
@@ -199,22 +141,17 @@ export async function GET(request: NextRequest) {
         lastUpdated: new Date().toISOString(),
       };
     } else {
-      const mockData = getMockPrice(ticker);
-      if (mockData) {
-        prices[ticker] = {
-          ...mockData,
-          lastUpdated: new Date().toISOString(),
-        };
-        console.log(`[Mock Fallback] ${ticker}: $${mockData.currentPrice}`);
-      }
+      console.log(`[Price API] No data available for ${ticker}`);
     }
   }
 
-  // Update cache
-  priceCache = {
-    prices,
-    timestamp: Date.now(),
-  };
+  // Only update cache if we got at least one price
+  if (Object.keys(prices).length > 0) {
+    priceCache = {
+      prices,
+      timestamp: Date.now(),
+    };
+  }
 
   const response: Record<string, any> = { ...prices };
   response._meta = {
@@ -222,6 +159,11 @@ export async function GET(request: NextRequest) {
     requestsLeft: MAX_DAILY_REQUESTS - requestCount,
     cached: false,
   };
+
+  // If no prices found
+  if (Object.keys(prices).length === 0) {
+    return NextResponse.json({ error: 'No prices available. Check ticker symbol.' }, { status: 404 });
+  }
 
   return NextResponse.json(response);
 }
