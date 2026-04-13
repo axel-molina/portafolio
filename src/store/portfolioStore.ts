@@ -85,9 +85,12 @@ export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
 
       set({ portfolios, loading: false });
 
-      // If no active portfolio but portfolios exist, select first
+      // If no active portfolio but portfolios exist, select first and load assets
       if (!get().activePortfolioId && portfolios.length > 0) {
-        set({ activePortfolioId: portfolios[0].id });
+        const firstId = portfolios[0].id;
+        set({ activePortfolioId: firstId });
+        // Load assets for the first portfolio
+        await get().loadAssetsForPortfolio(firstId);
       }
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
